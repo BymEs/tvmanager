@@ -138,7 +138,7 @@ class PlaylistItem(Base):
     __table_args__ = (UniqueConstraint("playlist_id", "position", name="uq_playlist_item_position"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    playlist_id: Mapped[str] = mapped_column(ForeKey("playlists.id", ondelete="CASCADE"), index=True)
+    playlist_id: Mapped[str] = mapped_column(ForeignKey("playlists.id", ondelete="CASCADE"), index=True)
     media_id: Mapped[str] = mapped_column(ForeignKey("media_assets.id", ondelete="CASCADE"), index=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     duration_seconds: Mapped[int | None] = mapped_column(Integer)
