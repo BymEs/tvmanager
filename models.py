@@ -134,3 +134,19 @@ class Schedule(Base):
     target_value: Mapped[str | None] = mapped_column(String(160))
     next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class MonitoringSetting(Base):
+    __tablename__ = "monitoring_settings"
+
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    heartbeat_timeout_seconds: Mapped[int] = mapped_column(Integer, default=120, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
