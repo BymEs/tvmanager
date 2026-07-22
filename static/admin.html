@@ -5,32 +5,80 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>MD Teknoloji TV Manager</title>
   <style>
-    :root{font-family:Inter,system-ui,sans-serif;color:#e8eef7;background:#0b1220}body{margin:0;padding:24px}.wrap{max-width:1200px;margin:auto}.top{display:flex;justify-content:space-between;align-items:center;gap:16px}.card{background:#121b2d;border:1px solid #22304a;border-radius:16px;padding:18px;margin-top:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}.device{padding:14px;border-radius:12px;background:#0f1727;border:1px solid #263550}.online{color:#55d187}.offline{color:#ff7d7d}button,select,input{background:#18243a;color:#fff;border:1px solid #334767;border-radius:10px;padding:10px 12px}button{cursor:pointer}.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}pre{white-space:pre-wrap;word-break:break-word;background:#0a1020;padding:12px;border-radius:10px;max-height:320px;overflow:auto}
+    :root{font-family:Inter,system-ui,sans-serif;color:#e8eef7;background:#0b1220}*{box-sizing:border-box}body{margin:0;padding:24px}.wrap{max-width:1400px;margin:auto}.top{display:flex;justify-content:space-between;align-items:center;gap:16px}.card{background:#121b2d;border:1px solid #22304a;border-radius:16px;padding:18px;margin-top:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}.device,.media-card,.playlist-item{padding:14px;border-radius:12px;background:#0f1727;border:1px solid #263550}.online{color:#55d187}.offline{color:#ff7d7d}button,select,input{background:#18243a;color:#fff;border:1px solid #334767;border-radius:10px;padding:10px 12px}button{cursor:pointer}button.danger{border-color:#743b49;color:#ffb8c3}button:disabled{opacity:.55;cursor:not-allowed}.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.grow{flex:1;min-width:180px}.muted{color:#9fb0c7}.media-preview{width:100%;aspect-ratio:16/9;border-radius:10px;background:#080d18;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:10px}.media-preview img,.media-preview video{width:100%;height:100%;object-fit:cover}.media-name{font-weight:700;overflow-wrap:anywhere}.media-meta{font-size:12px;color:#9fb0c7;margin:5px 0 10px}.playlist-list{display:grid;gap:10px;margin-top:12px}.playlist-item{display:grid;grid-template-columns:48px 1fr auto;gap:12px;align-items:center}.playlist-index{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:#18243a}.playlist-actions{display:flex;gap:6px;flex-wrap:wrap}.progress{height:8px;background:#0a1020;border-radius:999px;overflow:hidden;margin-top:10px}.progress>div{height:100%;width:0;background:#55d187;transition:width .2s}pre{white-space:pre-wrap;word-break:break-word;background:#0a1020;padding:12px;border-radius:10px;max-height:320px;overflow:auto}@media(max-width:720px){body{padding:12px}.top{align-items:flex-start}.playlist-item{grid-template-columns:40px 1fr}.playlist-actions{grid-column:1/-1}}
   </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="top"><div><h1>MD Teknoloji TV Manager</h1><div>Digital signage yönetim paneli</div></div><button onclick="refreshAll()">Yenile</button></div>
+  <div class="top"><div><h1>MD Teknoloji TV Manager</h1><div class="muted">Digital signage yönetim paneli</div></div><button onclick="refreshAll()">Yenile</button></div>
+
   <div class="grid">
     <section class="card"><h2>Sistem</h2><div id="health">Yükleniyor...</div></section>
     <section class="card"><h2>Hızlı Komut</h2><div class="row"><select id="deviceSelect"><option value="">Tüm cihazlar</option></select><select id="command"><option>reload</option><option>play</option><option>pause</option><option>stop</option><option>blackout</option></select><button onclick="sendCommand()">Gönder</button></div></section>
   </div>
+
+  <section class="card">
+    <div class="top"><div><h2>Medya Kütüphanesi</h2><div class="muted">Görsel, video, PDF ve ses dosyaları</div></div></div>
+    <div class="row">
+      <input class="grow" id="mediaInput" type="file" accept="image/*,video/*,audio/*,.pdf">
+      <button id="uploadButton" onclick="uploadMedia()">Yükle</button>
+      <button onclick="loadMedia()">Listeyi yenile</button>
+    </div>
+    <div id="uploadStatus" class="muted" style="margin-top:10px"></div>
+    <div class="progress"><div id="uploadProgress"></div></div>
+    <div id="mediaGrid" class="grid" style="margin-top:16px"></div>
+  </section>
+
+  <section class="card">
+    <div class="top"><div><h2>Playlist Düzenleyici</h2><div class="muted">Medya kartlarındaki “Playlist'e ekle” düğmesini kullanın.</div></div></div>
+    <div class="row">
+      <input class="grow" id="playlistId" value="demo" placeholder="Playlist ID">
+      <input class="grow" id="playlistName" value="Demo Playlist" placeholder="Playlist adı">
+      <button onclick="savePlaylist()">Kaydet</button>
+      <button onclick="clearDraft()">Temizle</button>
+    </div>
+    <div id="playlistDraft" class="playlist-list"></div>
+  </section>
+
   <section class="card"><h2>Cihazlar</h2><div id="devices" class="grid"></div></section>
-  <section class="card"><h2>Playlistler</h2><div id="playlists"></div></section>
+  <section class="card"><h2>Kayıtlı Playlistler</h2><div id="playlists" class="grid"></div></section>
   <section class="card"><h2>İşlem Günlüğü</h2><pre id="log"></pre></section>
 </div>
 <script>
 const logEl=document.getElementById('log');
+const playlistDraft=[];
 function log(v){logEl.textContent=new Date().toLocaleTimeString()+'  '+(typeof v==='string'?v:JSON.stringify(v,null,2))+'\n'+logEl.textContent}
-async function api(url,options){const r=await fetch(url,options);if(!r.ok)throw new Error(await r.text());return r.json()}
-async function loadHealth(){const h=await api('/health');document.getElementById('health').innerHTML=`Durum: <b>${h.status}</b><br>Çevrimiçi player: <b>${h.online_players}</b><br>${h.time}`}
-async function loadDevices(){const items=await api('/api/devices');const list=document.getElementById('devices');const select=document.getElementById('deviceSelect');list.innerHTML='';select.innerHTML='<option value="">Tüm cihazlar</option>';for(const d of items){const el=document.createElement('div');el.className='device';el.innerHTML=`<b>${d.device_id}</b><div class="${d.online?'online':'offline'}">${d.online?'Çevrimiçi':'Çevrimdışı'}</div><small>Son görülme: ${d.last_seen||'-'}</small><div class="row" style="margin-top:10px"><button onclick="assign('${d.device_id}','demo')">Demo gönder</button><button onclick="reloadDevice('${d.device_id}')">Yenile</button></div>`;list.appendChild(el);const o=document.createElement('option');o.value=d.device_id;o.textContent=d.device_id;select.appendChild(o)}if(!items.length)list.innerHTML='<div>Henüz bağlı player yok.</div>'}
-async function loadPlaylists(){const items=await api('/api/playlists');document.getElementById('playlists').innerHTML=items.map(p=>`<div class="device"><b>${p.name}</b><br><small>${p.items.length} içerik</small><pre>${JSON.stringify(p.items,null,2)}</pre></div>`).join('')}
+async function api(url,options){const r=await fetch(url,options);const text=await r.text();let data=null;try{data=text?JSON.parse(text):null}catch{data=text}if(!r.ok)throw new Error(typeof data==='string'?data:JSON.stringify(data));return data}
+function formatBytes(bytes){if(!Number.isFinite(bytes))return '-';const units=['B','KB','MB','GB'];let value=bytes,index=0;while(value>=1024&&index<units.length-1){value/=1024;index++}return `${value.toFixed(index?1:0)} ${units[index]}`}
+function button(label,handler,className=''){const el=document.createElement('button');el.textContent=label;if(className)el.className=className;el.addEventListener('click',handler);return el}
+function textEl(tag,text,className=''){const el=document.createElement(tag);el.textContent=text;if(className)el.className=className;return el}
+
+async function loadHealth(){const h=await api('/health');const el=document.getElementById('health');el.textContent='';el.append('Durum: ',textEl('b',h.status),document.createElement('br'),'Çevrimiçi player: ',textEl('b',String(h.online_players)),document.createElement('br'),'Medya: ',textEl('b',String(h.media_assets||0)),document.createElement('br'),h.time)}
+
+async function loadDevices(){const items=await api('/api/devices');const list=document.getElementById('devices');const select=document.getElementById('deviceSelect');list.textContent='';select.innerHTML='<option value="">Tüm cihazlar</option>';for(const d of items){const el=document.createElement('div');el.className='device';el.append(textEl('b',d.device_id),textEl('div',d.online?'Çevrimiçi':'Çevrimdışı',d.online?'online':'offline'),textEl('small','Son görülme: '+(d.last_seen||'-')));const actions=document.createElement('div');actions.className='row';actions.style.marginTop='10px';actions.append(button('Demo gönder',()=>assign(d.device_id,'demo')),button('Yenile',()=>reloadDevice(d.device_id)));el.append(actions);list.appendChild(el);const option=document.createElement('option');option.value=d.device_id;option.textContent=d.device_id;select.appendChild(option)}if(!items.length)list.append(textEl('div','Henüz bağlı player yok.'))}
+
+async function loadMedia(){const items=await api('/api/media');const grid=document.getElementById('mediaGrid');grid.textContent='';for(const asset of items){const card=document.createElement('article');card.className='media-card';const preview=document.createElement('div');preview.className='media-preview';if(asset.media_type==='image'){const img=document.createElement('img');img.src=asset.url;img.alt=asset.name;img.loading='lazy';preview.appendChild(img)}else if(asset.media_type==='video'){const video=document.createElement('video');video.src=asset.url;video.muted=true;video.preload='metadata';video.controls=true;preview.appendChild(video)}else{preview.append(textEl('strong',asset.media_type.toUpperCase()))}card.append(preview,textEl('div',asset.name,'media-name'),textEl('div',`${asset.media_type} · ${formatBytes(asset.size_bytes)}`,'media-meta'));const actions=document.createElement('div');actions.className='row';actions.append(button("Playlist'e ekle",()=>addToPlaylist(asset)),button('Aç',()=>window.open(asset.url,'_blank','noopener')),button('Sil',()=>deleteMedia(asset.id),'danger'));card.append(actions);grid.appendChild(card)}if(!items.length)grid.append(textEl('div','Henüz medya yüklenmedi.'))}
+
+function uploadMedia(){const input=document.getElementById('mediaInput');const file=input.files[0];if(!file){log('Önce bir dosya seçin.');return}const xhr=new XMLHttpRequest();const form=new FormData();form.append('file',file);const status=document.getElementById('uploadStatus');const progress=document.getElementById('uploadProgress');const uploadButton=document.getElementById('uploadButton');uploadButton.disabled=true;status.textContent=`Yükleniyor: ${file.name}`;progress.style.width='0%';xhr.upload.onprogress=e=>{if(e.lengthComputable)progress.style.width=`${Math.round(e.loaded/e.total*100)}%`};xhr.onload=async()=>{uploadButton.disabled=false;if(xhr.status>=200&&xhr.status<300){status.textContent='Yükleme tamamlandı.';input.value='';progress.style.width='100%';log(JSON.parse(xhr.responseText));await Promise.all([loadMedia(),loadHealth()])}else{status.textContent='Yükleme başarısız.';log(xhr.responseText)}};xhr.onerror=()=>{uploadButton.disabled=false;status.textContent='Bağlantı hatası.';log('Medya yükleme bağlantı hatası')};xhr.open('POST','/api/media');xhr.send(form)}
+
+async function deleteMedia(id){if(!confirm('Bu medya dosyası kalıcı olarak silinsin mi?'))return;try{log(await api(`/api/media/${encodeURIComponent(id)}`,{method:'DELETE'}));await Promise.all([loadMedia(),loadHealth()])}catch(e){log(e.message)}}
+
+function addToPlaylist(asset){playlistDraft.push({type:asset.media_type,url:asset.url,duration:asset.media_type==='video'||asset.media_type==='audio'?30:10,name:asset.name});renderPlaylistDraft()}
+function moveDraft(index,direction){const target=index+direction;if(target<0||target>=playlistDraft.length)return;[playlistDraft[index],playlistDraft[target]]=[playlistDraft[target],playlistDraft[index]];renderPlaylistDraft()}
+function removeDraft(index){playlistDraft.splice(index,1);renderPlaylistDraft()}
+function clearDraft(){playlistDraft.length=0;renderPlaylistDraft()}
+function renderPlaylistDraft(){const list=document.getElementById('playlistDraft');list.textContent='';playlistDraft.forEach((item,index)=>{const row=document.createElement('div');row.className='playlist-item';row.append(textEl('div',String(index+1),'playlist-index'));const info=document.createElement('div');info.append(textEl('div',item.name||item.url,'media-name'));const duration=document.createElement('input');duration.type='number';duration.min='1';duration.max='86400';duration.value=String(item.duration);duration.style.width='100px';duration.addEventListener('change',()=>item.duration=Math.max(1,Number(duration.value)||10));const meta=document.createElement('div');meta.className='row';meta.append(textEl('span',item.type,'muted'),textEl('span','Süre:','muted'),duration);info.append(meta);const actions=document.createElement('div');actions.className='playlist-actions';actions.append(button('↑',()=>moveDraft(index,-1)),button('↓',()=>moveDraft(index,1)),button('Çıkar',()=>removeDraft(index),'danger'));row.append(info,actions);list.appendChild(row)});if(!playlistDraft.length)list.append(textEl('div','Playlist taslağı boş.','muted'))}
+
+async function savePlaylist(){const id=document.getElementById('playlistId').value.trim();const name=document.getElementById('playlistName').value.trim();if(!id||!name){log('Playlist ID ve adı zorunludur.');return}const body={id,name,items:playlistDraft.map(({type,url,duration})=>({type,url,duration}))};try{log(await api(`/api/playlists/${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}));await loadPlaylists()}catch(e){log(e.message)}}
+
+async function loadPlaylists(){const items=await api('/api/playlists');const list=document.getElementById('playlists');list.textContent='';for(const p of items){const card=document.createElement('div');card.className='device';card.append(textEl('b',p.name),document.createElement('br'),textEl('small',`${p.items.length} içerik`));const actions=document.createElement('div');actions.className='row';actions.style.marginTop='10px';actions.append(button('Düzenle',()=>loadPlaylistIntoDraft(p)),button('Seçili cihaza gönder',()=>assignSelected(p.id)));card.append(actions);list.appendChild(card)}if(!items.length)list.append(textEl('div','Playlist bulunamadı.'))}
+function loadPlaylistIntoDraft(p){document.getElementById('playlistId').value=p.id;document.getElementById('playlistName').value=p.name;playlistDraft.length=0;p.items.forEach((item,index)=>playlistDraft.push({...item,name:`${item.type} ${index+1}`}));renderPlaylistDraft();window.scrollTo({top:document.getElementById('playlistDraft').offsetTop-100,behavior:'smooth'})}
+async function assignSelected(playlist){const device=document.getElementById('deviceSelect').value;if(!device){log('Önce Hızlı Komut bölümünden bir cihaz seçin.');return}await assign(device,playlist)}
 async function sendCommand(){const body={device_id:document.getElementById('deviceSelect').value||null,command:document.getElementById('command').value,payload:{}};try{log(await api('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}))}catch(e){log(e.message)}}
 async function assign(device,playlist){try{log(await api(`/api/devices/${encodeURIComponent(device)}/playlist/${encodeURIComponent(playlist)}`,{method:'POST'}))}catch(e){log(e.message)}}
 async function reloadDevice(device){document.getElementById('deviceSelect').value=device;document.getElementById('command').value='reload';await sendCommand()}
-async function refreshAll(){try{await Promise.all([loadHealth(),loadDevices(),loadPlaylists()])}catch(e){log(e.message)}}
-refreshAll();setInterval(()=>{loadHealth();loadDevices()},5000);
+async function refreshAll(){try{await Promise.all([loadHealth(),loadDevices(),loadMedia(),loadPlaylists()])}catch(e){log(e.message)}}
+renderPlaylistDraft();refreshAll();setInterval(()=>{loadHealth().catch(e=>log(e.message));loadDevices().catch(e=>log(e.message))},5000);
 </script>
 </body>
 </html>
