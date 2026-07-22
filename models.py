@@ -111,6 +111,9 @@ class MediaAsset(Base):
     media_type: Mapped[MediaType] = mapped_column(Enum(MediaType), nullable=False)
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
     duration_seconds: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    playlist_items: Mapped[list["PlaylistItem"]] = relationship(back_populates="media", cascade="all, delete-orphan")
 
 
 class Playlist(Base):
@@ -121,6 +124,28 @@ class Playlist(Base):
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    items: Mapped[list["PlaylistItem"]] = relationship(
+        back_populates="playlist",
+        cascade="all, delete-orphan",
+        order_by="PlaylistItem.position",
+    )
+
+
+class PlaylistItem(Base):
+    __tablename__ = "playlist_items"
+    __table_args__ = (UniqueConstraint("playlist_id", "position", name="uq_playlist_item_position"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    playlist_id: Mapped[str] = mapped_column(ForeKey("playlists.id", ondelete="CASCADE"), index=True)
+    media_id: Mapped[str] = mapped_column(ForeignKey("media_assets.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer)
+    transition: Mapped[str] = mapped_column(String(32), default="cut", nullable=False)
+
+    playlist: Mapped[Playlist] = relationship(back_populates="items")
+    media: Mapped[MediaAsset] = relationship(back_populates="playlist_items")
 
 
 class Schedule(Base):
