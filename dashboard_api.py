@@ -9,15 +9,81 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth_api import current_user
 from database import get_db
-from models import Device, MediaAsset, Playlist, Schedule, Site, User
+from models import Device, MediaAsset, MonitoringSetting, Playlist, Schedule, Site, User, UserRole
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
+DEFAULT_HEARTBEAT_TIMEOUT_SECONDS = 120
 
 
 class HeartbeatPayload(BaseModel):
     device_uid: str = Field(min_length=2, max_length=160)
     capabilities: dict | None = None
     config: dict | None = None
+
+
+class MonitoringSettingsUpdate(BaseModel):
+    heartbeat_timeout_seconds: int = Field(ge=10, le=86400)
+
+
+def require_admin(user: User) -> None:
+    if user.role not in {UserRole.superadmin, UserRole.admin}:
+        raise HTTPException(status_code=403, detail="Admin role required")
+
+
+async def get_heartbeat_timeout(db: AsyncSession, organization_id: str) -> int:
+    configured = await db.scalar(
+        select(MonitoringSetting.heartbeat_timeout_seconds).where(
+            MonitoringSetting.organization_id == organization_id
+        )
+    )
+    return int(configured or DEFAULT_HEARTBEAT_TIMEOUT_SECONDS)
+
+
+@router.get("/monitoring/settings")
+async def get_monitoring_settings(
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    if user.organization_id is None:
+        raise HTTPException(status_code=403, detail="User is not assigned to an organization")
+
+    timeout_seconds = await get_heartbeat_timeout(db, user.organization_id)
+    return {
+        "organization_id": user.organization_id,
+        "heartbeat_timeout_seconds": timeout_seconds,
+        "heartbeat_timeout_minutes": round(timeout_seconds / 60, 2),
+        "uses_default": await db.get(MonitoringSetting, user.organization_id) is None,
+    }
+
+
+@router.put("/monitoring/settings")
+async def update_monitoring_settings(
+    payload: MonitoringSettingsUpdate,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    require_admin(user)
+    if user.organization_id is None:
+        raise HTTPException(status_code=403, detail="User is not assigned to an organization")
+
+    item = await db.get(MonitoringSetting, user.organization_id)
+    if item is None:
+        item = MonitoringSetting(
+            organization_id=user.organization_id,
+            heartbeat_timeout_seconds=payload.heartbeat_timeout_seconds,
+        )
+        db.add(item)
+    else:
+        item.heartbeat_timeout_seconds = payload.heartbeat_timeout_seconds
+
+    await db.commit()
+    await db.refresh(item)
+    return {
+        "organization_id": item.organization_id,
+        "heartbeat_timeout_seconds": item.heartbeat_timeout_seconds,
+        "heartbeat_timeout_minutes": round(item.heartbeat_timeout_seconds / 60, 2),
+        "updated_at": item.updated_at,
+    }
 
 
 @router.get("/dashboard/summary")
@@ -30,7 +96,8 @@ async def dashboard_summary(
         raise HTTPException(status_code=403, detail="User is not assigned to an organization")
 
     now = datetime.now(timezone.utc)
-    stale_before = now - timedelta(minutes=2)
+    timeout_seconds = await get_heartbeat_timeout(db, organization_id)
+    stale_before = now - timedelta(seconds=timeout_seconds)
 
     site_count = await db.scalar(
         select(func.count(Site.id)).where(Site.organization_id == organization_id)
@@ -88,7 +155,8 @@ async def dashboard_summary(
         },
         "health": {
             "device_online_ratio": round(online_devices / total_devices, 4) if total_devices else 0.0,
-            "heartbeat_timeout_seconds": 120,
+            "heartbeat_timeout_seconds": timeout_seconds,
+            "heartbeat_timeout_minutes": round(timeout_seconds / 60, 2),
         },
     }
 
@@ -141,7 +209,8 @@ async def reconcile_offline_devices(
     if user.organization_id is None:
         raise HTTPException(status_code=403, detail="User is not assigned to an organization")
 
-    stale_before = datetime.now(timezone.utc) - timedelta(minutes=2)
+    timeout_seconds = await get_heartbeat_timeout(db, user.organization_id)
+    stale_before = datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds)
     result = await db.execute(
         update(Device)
         .where(
@@ -154,5 +223,6 @@ async def reconcile_offline_devices(
     await db.commit()
     return {
         "updated": int(result.rowcount or 0),
+        "heartbeat_timeout_seconds": timeout_seconds,
         "offline_before": stale_before,
     }
