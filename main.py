@@ -13,8 +13,10 @@ from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSock
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from sqlalchemy import update
 
-from database import create_database
+from database import SessionLocal, create_database
+from models import Device
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -36,8 +38,31 @@ ALLOWED_MEDIA_TYPES: dict[str, set[str]] = {
 }
 
 
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def utc_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return utc_now().isoformat()
+
+
+async def persist_player_presence(device_uid: str, status: dict[str, Any] | None = None) -> None:
+    values: dict[str, Any] = {
+        "is_online": True,
+        "last_seen_at": utc_now(),
+    }
+    if status:
+        runtime_config = {key: value for key, value in status.items() if key != "type"}
+        if runtime_config:
+            values["config"] = runtime_config
+
+    async with SessionLocal() as db:
+        await db.execute(
+            update(Device)
+            .where(Device.device_uid == device_uid)
+            .values(**values)
+        )
+        await db.commit()
 
 
 def sanitize_filename(filename: str) -> str:
@@ -97,6 +122,7 @@ class PlayerConnectionManager:
             "connected_at": utc_iso(),
             "last_seen": utc_iso(),
         }
+        await persist_player_presence(device_id)
 
     def disconnect(self, device_id: str, websocket: WebSocket) -> None:
         if self.connections.get(device_id) is websocket:
@@ -163,7 +189,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="MD Teknoloji TV Manager", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="MD Teknoloji TV Manager", version="0.3.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/media/files", StaticFiles(directory=MEDIA_FILES_DIR), name="media-files")
 
@@ -172,7 +198,7 @@ app.mount("/media/files", StaticFiles(directory=MEDIA_FILES_DIR), name="media-fi
 async def root() -> dict[str, str]:
     return {
         "name": "MD Teknoloji TV Manager",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "admin": "/admin",
         "player": "/player?device_id=demo-tv",
         "health": "/health",
@@ -348,6 +374,7 @@ async def player_socket(websocket: WebSocket, device_id: str) -> None:
             info["last_seen"] = utc_iso()
             if message.get("type") == "status":
                 info.update({key: value for key, value in message.items() if key != "type"})
+            await persist_player_presence(device_id, message if message.get("type") == "status" else None)
             await websocket.send_json({"type": "ack", "received": message.get("type", "unknown")})
     except WebSocketDisconnect:
         manager.disconnect(device_id, websocket)
