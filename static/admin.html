@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MD Teknoloji TV Manager</title>
+  <style>
+    :root{font-family:Inter,system-ui,sans-serif;color:#e8eef7;background:#0b1220}body{margin:0;padding:24px}.wrap{max-width:1200px;margin:auto}.top{display:flex;justify-content:space-between;align-items:center;gap:16px}.card{background:#121b2d;border:1px solid #22304a;border-radius:16px;padding:18px;margin-top:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}.device{padding:14px;border-radius:12px;background:#0f1727;border:1px solid #263550}.online{color:#55d187}.offline{color:#ff7d7d}button,select,input{background:#18243a;color:#fff;border:1px solid #334767;border-radius:10px;padding:10px 12px}button{cursor:pointer}.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}pre{white-space:pre-wrap;word-break:break-word;background:#0a1020;padding:12px;border-radius:10px;max-height:320px;overflow:auto}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div><h1>MD Teknoloji TV Manager</h1><div>Digital signage yönetim paneli</div></div><button onclick="refreshAll()">Yenile</button></div>
+  <div class="grid">
+    <section class="card"><h2>Sistem</h2><div id="health">Yükleniyor...</div></section>
+    <section class="card"><h2>Hızlı Komut</h2><div class="row"><select id="deviceSelect"><option value="">Tüm cihazlar</option></select><select id="command"><option>reload</option><option>play</option><option>pause</option><option>stop</option><option>blackout</option></select><button onclick="sendCommand()">Gönder</button></div></section>
+  </div>
+  <section class="card"><h2>Cihazlar</h2><div id="devices" class="grid"></div></section>
+  <section class="card"><h2>Playlistler</h2><div id="playlists"></div></section>
+  <section class="card"><h2>İşlem Günlüğü</h2><pre id="log"></pre></section>
+</div>
+<script>
+const logEl=document.getElementById('log');
+function log(v){logEl.textContent=new Date().toLocaleTimeString()+'  '+(typeof v==='string'?v:JSON.stringify(v,null,2))+'\n'+logEl.textContent}
+async function api(url,options){const r=await fetch(url,options);if(!r.ok)throw new Error(await r.text());return r.json()}
+async function loadHealth(){const h=await api('/health');document.getElementById('health').innerHTML=`Durum: <b>${h.status}</b><br>Çevrimiçi player: <b>${h.online_players}</b><br>${h.time}`}
+async function loadDevices(){const items=await api('/api/devices');const list=document.getElementById('devices');const select=document.getElementById('deviceSelect');list.innerHTML='';select.innerHTML='<option value="">Tüm cihazlar</option>';for(const d of items){const el=document.createElement('div');el.className='device';el.innerHTML=`<b>${d.device_id}</b><div class="${d.online?'online':'offline'}">${d.online?'Çevrimiçi':'Çevrimdışı'}</div><small>Son görülme: ${d.last_seen||'-'}</small><div class="row" style="margin-top:10px"><button onclick="assign('${d.device_id}','demo')">Demo gönder</button><button onclick="reloadDevice('${d.device_id}')">Yenile</button></div>`;list.appendChild(el);const o=document.createElement('option');o.value=d.device_id;o.textContent=d.device_id;select.appendChild(o)}if(!items.length)list.innerHTML='<div>Henüz bağlı player yok.</div>'}
+async function loadPlaylists(){const items=await api('/api/playlists');document.getElementById('playlists').innerHTML=items.map(p=>`<div class="device"><b>${p.name}</b><br><small>${p.items.length} içerik</small><pre>${JSON.stringify(p.items,null,2)}</pre></div>`).join('')}
+async function sendCommand(){const body={device_id:document.getElementById('deviceSelect').value||null,command:document.getElementById('command').value,payload:{}};try{log(await api('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}))}catch(e){log(e.message)}}
+async function assign(device,playlist){try{log(await api(`/api/devices/${encodeURIComponent(device)}/playlist/${encodeURIComponent(playlist)}`,{method:'POST'}))}catch(e){log(e.message)}}
+async function reloadDevice(device){document.getElementById('deviceSelect').value=device;document.getElementById('command').value='reload';await sendCommand()}
+async function refreshAll(){try{await Promise.all([loadHealth(),loadDevices(),loadPlaylists()])}catch(e){log(e.message)}}
+refreshAll();setInterval(()=>{loadHealth();loadDevices()},5000);
+</script>
+</body>
+</html>
